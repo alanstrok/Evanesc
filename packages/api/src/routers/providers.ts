@@ -3,29 +3,31 @@ import { eq, desc } from "drizzle-orm";
 import { providers, users } from "@evanesc/db";
 import { router, publicProcedure, protectedProcedure, adminProcedure } from "../trpc";
 
+const categoryEnum = z.enum([
+  "restaurants",
+  "hotels",
+  "villas",
+  "spas",
+  "water_sports",
+  "excursions",
+]);
+
 export const providersRouter = router({
   // Public: list verified providers
   list: publicProcedure
     .input(
       z
         .object({
-          category: z
-            .enum([
-              "restaurants",
-              "hotels",
-              "villas",
-              "spas",
-              "water_sports",
-              "excursions",
-            ])
-            .optional(),
+          category: categoryEnum.optional(),
         })
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      const conditions = [eq(providers.isVerified, true)];
       if (input?.category) {
-        conditions.push(eq(providers.category, input.category) as any);
+        return ctx.db.query.providers.findMany({
+          where: eq(providers.category, input.category),
+          orderBy: [desc(providers.createdAt)],
+        });
       }
 
       return ctx.db.query.providers.findMany({
@@ -60,17 +62,14 @@ export const providersRouter = router({
     .input(
       z.object({
         name: z.string().min(1),
-        category: z.enum([
-          "restaurants",
-          "hotels",
-          "villas",
-          "spas",
-          "water_sports",
-          "excursions",
-        ]),
+        category: categoryEnum,
         description: z.string().optional(),
         logoUrl: z.string().optional(),
         address: z.string().optional(),
+        phone: z.string().optional(),
+        email: z.string().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
         instagram: z.string().optional(),
         website: z.string().optional(),
       }),
@@ -89,7 +88,6 @@ export const providersRouter = router({
         return updated;
       }
 
-      // Update user role to provider
       await ctx.db
         .update(users)
         .set({ role: "provider" })
@@ -109,7 +107,7 @@ export const providersRouter = router({
   // Admin: list all providers (including unverified)
   adminList: adminProcedure.query(async ({ ctx }) => {
     return ctx.db.query.providers.findMany({
-      with: { user: true },
+      with: { user: true, offers: true },
       orderBy: [desc(providers.createdAt)],
     });
   }),
@@ -129,5 +127,41 @@ export const providersRouter = router({
         .where(eq(providers.id, input.providerId))
         .returning();
       return updated;
+    }),
+
+  // Admin: update any provider
+  adminUpdate: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1).optional(),
+        category: categoryEnum.optional(),
+        description: z.string().optional(),
+        address: z.string().optional(),
+        phone: z.string().optional(),
+        email: z.string().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
+        instagram: z.string().optional(),
+        website: z.string().optional(),
+        isVerified: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      const [updated] = await ctx.db
+        .update(providers)
+        .set(data)
+        .where(eq(providers.id, id))
+        .returning();
+      return updated;
+    }),
+
+  // Admin: delete provider
+  adminDelete: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.delete(providers).where(eq(providers.id, input.id));
+      return { success: true };
     }),
 });

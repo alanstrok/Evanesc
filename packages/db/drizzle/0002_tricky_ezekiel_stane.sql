@@ -1,0 +1,1 @@
+ALTER TABLE "offers" ADD COLUMN "total_spots" integer;

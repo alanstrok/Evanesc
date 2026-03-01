@@ -1,11 +1,21 @@
 import { z } from "zod";
-import { eq, and, desc, gte, gt, sql, lte } from "drizzle-orm";
+import { eq, and, desc, gt, lte } from "drizzle-orm";
 import { offers, offerSlots, providers } from "@evanesc/db";
 import {
   router,
   publicProcedure,
   providerProcedure,
+  adminProcedure,
 } from "../trpc";
+
+const categoryEnum = z.enum([
+  "restaurants",
+  "hotels",
+  "villas",
+  "spas",
+  "water_sports",
+  "excursions",
+]);
 
 export const offersRouter = router({
   // Public: list active offers with visible slots
@@ -13,16 +23,7 @@ export const offersRouter = router({
     .input(
       z
         .object({
-          category: z
-            .enum([
-              "restaurants",
-              "hotels",
-              "villas",
-              "spas",
-              "water_sports",
-              "excursions",
-            ])
-            .optional(),
+          category: categoryEnum.optional(),
           limit: z.number().min(1).max(50).default(20),
           offset: z.number().min(0).default(0),
         })
@@ -54,7 +55,6 @@ export const offersRouter = router({
         offset,
       });
 
-      // Only return offers that have visible slots
       return results.filter((offer) => offer.slots.length > 0);
     }),
 
@@ -93,7 +93,7 @@ export const offersRouter = router({
     });
   }),
 
-  // Provider: create offer
+  // Provider: create offer (with optional first slot)
   create: providerProcedure
     .input(
       z.object({
@@ -101,16 +101,14 @@ export const offersRouter = router({
         description: z.string().optional(),
         normalPrice: z.string(),
         dealPrice: z.string(),
-        category: z.enum([
-          "restaurants",
-          "hotels",
-          "villas",
-          "spas",
-          "water_sports",
-          "excursions",
-        ]),
+        category: categoryEnum,
+        categories: z.array(z.string()).default([]),
+        totalSpots: z.number().min(1).optional(),
         images: z.array(z.string()).default([]),
         visibilityHours: z.number().min(1).default(48),
+        slotDate: z.string().optional(),
+        slotTime: z.string().optional(),
+        slotCapacity: z.number().min(1).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -130,10 +128,29 @@ export const offersRouter = router({
           normalPrice: input.normalPrice,
           dealPrice: input.dealPrice,
           category: input.category,
+          categories: input.categories,
+          totalSpots: input.totalSpots,
           images: input.images,
           visibilityHours: input.visibilityHours,
         })
         .returning();
+
+      if (input.slotDate && input.slotTime && input.slotCapacity) {
+        const slotDateTime = new Date(`${input.slotDate}T${input.slotTime}:00`);
+        const visibleFrom = new Date(
+          slotDateTime.getTime() - input.visibilityHours * 60 * 60 * 1000,
+        );
+
+        await ctx.db.insert(offerSlots).values({
+          offerId: offer.id,
+          date: input.slotDate,
+          time: input.slotTime,
+          capacity: input.slotCapacity,
+          remainingSpots: input.slotCapacity,
+          visibleFrom,
+          expiresAt: slotDateTime,
+        });
+      }
 
       return offer;
     }),
@@ -147,16 +164,9 @@ export const offersRouter = router({
         description: z.string().optional(),
         normalPrice: z.string().optional(),
         dealPrice: z.string().optional(),
-        category: z
-          .enum([
-            "restaurants",
-            "hotels",
-            "villas",
-            "spas",
-            "water_sports",
-            "excursions",
-          ])
-          .optional(),
+        category: categoryEnum.optional(),
+        categories: z.array(z.string()).optional(),
+        totalSpots: z.number().min(1).optional(),
         images: z.array(z.string()).optional(),
         isActive: z.boolean().optional(),
         visibilityHours: z.number().min(1).optional(),
@@ -183,7 +193,6 @@ export const offersRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // Calculate visibleFrom based on offer's visibilityHours
       const offer = await ctx.db.query.offers.findFirst({
         where: eq(offers.id, input.offerId),
       });
@@ -215,6 +224,46 @@ export const offersRouter = router({
     .input(z.object({ slotId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db.delete(offerSlots).where(eq(offerSlots.id, input.slotId));
+      return { success: true };
+    }),
+
+  // ─── Admin endpoints ──────────────────────────────────────────────────────
+
+  // Admin: list all offers (including inactive)
+  adminList: adminProcedure.query(async ({ ctx }) => {
+    return ctx.db.query.offers.findMany({
+      with: { provider: true, slots: true },
+      orderBy: [desc(offers.createdAt)],
+    });
+  }),
+
+  // Admin: update any offer (deactivate non-compliant, etc.)
+  adminUpdate: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        title: z.string().min(1).optional(),
+        description: z.string().optional(),
+        isActive: z.boolean().optional(),
+        category: categoryEnum.optional(),
+        categories: z.array(z.string()).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      const [updated] = await ctx.db
+        .update(offers)
+        .set(data)
+        .where(eq(offers.id, id))
+        .returning();
+      return updated;
+    }),
+
+  // Admin: delete an offer
+  adminDelete: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.delete(offers).where(eq(offers.id, input.id));
       return { success: true };
     }),
 });
