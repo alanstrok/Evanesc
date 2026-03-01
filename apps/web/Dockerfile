@@ -51,15 +51,11 @@ COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 RUN mkdir -p ./apps/web/public
 COPY --from=builder /app/apps/web/public ./apps/web/public/
 
-# Copy migration files and migrate script
+# Copy migration files (used by instrumentation.ts on startup)
 COPY --from=builder /app/packages/db/drizzle ./packages/db/drizzle
-COPY --from=builder /app/packages/db/migrate.cjs ./packages/db/migrate.cjs
-
-# Copy entrypoint
-COPY --from=builder /app/apps/web/docker-entrypoint.sh ./docker-entrypoint.sh
 
 USER nextjs
 
 EXPOSE 3000
 
-ENTRYPOINT ["./docker-entrypoint.sh"]
+CMD ["node", "apps/web/server.js"]
