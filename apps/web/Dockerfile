@@ -25,9 +25,6 @@ COPY . .
 # Generate database migrations
 RUN pnpm --filter @evanesc/db db:generate
 
-# Build the migrate script as a standalone CJS bundle
-RUN npx esbuild packages/db/src/migrate.ts --bundle --platform=node --format=cjs --outfile=packages/db/migrate.cjs
-
 # Build the web app
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm turbo build --filter=@evanesc/web
@@ -56,7 +53,7 @@ COPY --from=builder /app/apps/web/public ./apps/web/public/
 
 # Copy migration files and migrate script
 COPY --from=builder /app/packages/db/drizzle ./packages/db/drizzle
-COPY --from=builder /app/packages/db/migrate.cjs ./packages/db/migrate.cjs
+COPY --from=builder /app/packages/db/migrate.mjs ./packages/db/migrate.mjs
 
 # Copy entrypoint
 COPY --from=builder /app/apps/web/docker-entrypoint.sh ./docker-entrypoint.sh
