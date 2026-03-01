@@ -18,6 +18,20 @@ export const auth = betterAuth({
       verification: verifications,
     },
   }),
+  user: {
+    additionalFields: {
+      role: {
+        type: "string",
+        defaultValue: "customer",
+        input: false,
+      },
+      phone: {
+        type: "string",
+        required: false,
+        input: false,
+      },
+    },
+  },
   trustedOrigins: [
     process.env.BETTER_AUTH_URL,
     process.env.NEXT_PUBLIC_APP_URL,

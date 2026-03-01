@@ -22,7 +22,7 @@ const handler = (req: Request) =>
               id: betterAuthSession.user.id,
               email: betterAuthSession.user.email,
               name: betterAuthSession.user.name,
-              role: (betterAuthSession.user as any).role ?? "customer",
+              role: betterAuthSession.user.role ?? "customer",
             },
           };
         }
