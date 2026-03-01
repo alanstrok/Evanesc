@@ -29,6 +29,8 @@ RUN pnpm turbo build --filter=@evanesc/web
 # ─── Stage 2: Runner ─────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner
 
+LABEL org.opencontainers.image.source="https://github.com/alanstrok/Evanesc"
+
 WORKDIR /app
 
 ENV NODE_ENV=production
