@@ -22,6 +22,12 @@ RUN pnpm install --frozen-lockfile
 # Copy all source code
 COPY . .
 
+# Generate database migrations
+RUN pnpm --filter @evanesc/db db:generate
+
+# Build the migrate script as a standalone CJS bundle
+RUN npx esbuild packages/db/src/migrate.ts --bundle --platform=node --format=cjs --outfile=packages/db/migrate.cjs
+
 # Build the web app
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm turbo build --filter=@evanesc/web
@@ -48,8 +54,15 @@ COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 RUN mkdir -p ./apps/web/public
 COPY --from=builder /app/apps/web/public ./apps/web/public/
 
+# Copy migration files and migrate script
+COPY --from=builder /app/packages/db/drizzle ./packages/db/drizzle
+COPY --from=builder /app/packages/db/migrate.cjs ./packages/db/migrate.cjs
+
+# Copy entrypoint
+COPY --from=builder /app/apps/web/docker-entrypoint.sh ./docker-entrypoint.sh
+
 USER nextjs
 
 EXPOSE 3000
 
-CMD ["node", "apps/web/server.js"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
