@@ -53,7 +53,7 @@ COPY --from=builder /app/apps/web/public ./apps/web/public/
 
 # Copy migration files and migrate script
 COPY --from=builder /app/packages/db/drizzle ./packages/db/drizzle
-COPY --from=builder /app/packages/db/migrate.mjs ./packages/db/migrate.mjs
+COPY --from=builder /app/packages/db/migrate.cjs ./packages/db/migrate.cjs
 
 # Copy entrypoint
 COPY --from=builder /app/apps/web/docker-entrypoint.sh ./docker-entrypoint.sh
