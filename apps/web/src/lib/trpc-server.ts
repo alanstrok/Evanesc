@@ -1,6 +1,7 @@
 import { appRouter } from "@evanesc/api";
 import { createCallerFactory, type Context } from "@evanesc/api/server";
-import { db } from "@evanesc/db";
+import { db, users } from "@evanesc/db";
+import { eq } from "drizzle-orm";
 import { auth } from "./auth";
 import { headers } from "next/headers";
 
@@ -14,12 +15,17 @@ export async function getServerCaller() {
       headers: await headers(),
     });
     if (betterAuthSession?.user) {
+      // Fetch role directly from DB to ensure it's always correct
+      const dbUser = await db.query.users.findFirst({
+        where: eq(users.id, betterAuthSession.user.id),
+        columns: { role: true },
+      });
       session = {
         user: {
           id: betterAuthSession.user.id,
           email: betterAuthSession.user.email,
           name: betterAuthSession.user.name,
-          role: betterAuthSession.user.role ?? "customer",
+          role: dbUser?.role ?? "customer",
         },
       };
     }
