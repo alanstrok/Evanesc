@@ -17,7 +17,7 @@ COPY packages/db/package.json ./packages/db/
 COPY packages/ui/package.json ./packages/ui/
 
 # Install dependencies
-RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm install --frozen-lockfile
 
 # Copy all source code
 COPY . .
