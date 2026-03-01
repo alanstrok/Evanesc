@@ -11,9 +11,12 @@ export async function register() {
     const client = postgres(connectionString, { max: 1 });
     const db = drizzle(client);
 
+    const migrationsFolder =
+      process.env.MIGRATIONS_FOLDER || "./packages/db/drizzle";
+
     try {
       console.log("Running database migrations...");
-      await migrate(db, { migrationsFolder: "./packages/db/drizzle" });
+      await migrate(db, { migrationsFolder });
       console.log("Migrations complete.");
     } catch (err) {
       console.error("Migration failed:", err);
