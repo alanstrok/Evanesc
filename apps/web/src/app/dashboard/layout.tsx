@@ -49,7 +49,7 @@ export default function DashboardLayout({
         </nav>
         <div className="absolute bottom-0 w-64 border-t border-border p-4">
           <button
-            onClick={() => signOut({ fetchOptions: { onSuccess: () => window.location.href = "/login" } })}
+            onClick={() => signOut({ fetchOptions: { onSuccess: () => { window.location.href = "/login"; } } })}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             Déconnexion
