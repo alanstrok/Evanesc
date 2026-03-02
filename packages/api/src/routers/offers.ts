@@ -44,7 +44,6 @@ export const offersRouter = router({
           provider: true,
           slots: {
             where: and(
-              lte(offerSlots.visibleFrom, now),
               gt(offerSlots.expiresAt, now),
               gt(offerSlots.remainingSpots, 0),
             ),
@@ -69,10 +68,25 @@ export const offersRouter = router({
           provider: true,
           slots: {
             where: and(
-              lte(offerSlots.visibleFrom, now),
               gt(offerSlots.expiresAt, now),
               gt(offerSlots.remainingSpots, 0),
             ),
+          },
+        },
+      });
+      return offer ?? null;
+    }),
+
+  // Provider: get own offer by ID (all slots, unfiltered)
+  myOfferById: providerProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const offer = await ctx.db.query.offers.findFirst({
+        where: eq(offers.id, input.id),
+        with: {
+          provider: true,
+          slots: {
+            orderBy: [desc(offerSlots.date)],
           },
         },
       });

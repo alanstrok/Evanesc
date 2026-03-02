@@ -10,22 +10,22 @@ export default function EditOfferPage() {
   const router = useRouter();
   const utils = trpc.useUtils();
 
-  const { data: offer, isLoading } = trpc.offers.byId.useQuery({ id });
+  const { data: offer, isLoading } = trpc.offers.myOfferById.useQuery({ id });
   const updateOffer = trpc.offers.update.useMutation({
     onSuccess: () => {
       utils.offers.myOffers.invalidate();
-      utils.offers.byId.invalidate({ id });
+      utils.offers.myOfferById.invalidate({ id });
     },
   });
   const addSlot = trpc.offers.addSlot.useMutation({
     onSuccess: () => {
-      utils.offers.byId.invalidate({ id });
+      utils.offers.myOfferById.invalidate({ id });
       utils.offers.myOffers.invalidate();
     },
   });
   const deleteSlot = trpc.offers.deleteSlot.useMutation({
     onSuccess: () => {
-      utils.offers.byId.invalidate({ id });
+      utils.offers.myOfferById.invalidate({ id });
     },
   });
 
