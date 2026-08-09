@@ -15,4 +15,8 @@ config.resolver.nodeModulesPaths = [
   path.resolve(monorepoRoot, "node_modules"),
 ];
 
+// superjson (and its copy-anything dep) ship an "exports" map with no "main"
+// field — without this Metro can't resolve them and the bundle fails
+config.resolver.unstable_enablePackageExports = true;
+
 module.exports = config;
