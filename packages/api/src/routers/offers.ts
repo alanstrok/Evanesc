@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { eq, and, desc, gt, lte } from "drizzle-orm";
 import { offers, offerSlots, providers } from "@evanesc/db";
 import {
@@ -6,6 +7,7 @@ import {
   publicProcedure,
   providerProcedure,
   adminProcedure,
+  type Context,
 } from "../trpc";
 
 const categoryEnum = z.enum([
@@ -16,6 +18,29 @@ const categoryEnum = z.enum([
   "water_sports",
   "excursions",
 ]);
+
+type AuthedContext = Context & { session: NonNullable<Context["session"]> };
+
+// Load an offer and verify it belongs to the calling provider (admins bypass).
+async function getOwnedOffer(ctx: AuthedContext, offerId: string) {
+  const offer = await ctx.db.query.offers.findFirst({
+    where: eq(offers.id, offerId),
+    with: { provider: true },
+  });
+  if (!offer) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Offre introuvable" });
+  }
+  if (
+    ctx.session.user.role !== "admin" &&
+    offer.provider.userId !== ctx.session.user.id
+  ) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Cette offre ne vous appartient pas",
+    });
+  }
+  return offer;
+}
 
 export const offersRouter = router({
   // Public: list active offers with visible slots
@@ -44,6 +69,7 @@ export const offersRouter = router({
           provider: true,
           slots: {
             where: and(
+              lte(offerSlots.visibleFrom, now),
               gt(offerSlots.expiresAt, now),
               gt(offerSlots.remainingSpots, 0),
             ),
@@ -63,11 +89,12 @@ export const offersRouter = router({
     .query(async ({ ctx, input }) => {
       const now = new Date();
       const offer = await ctx.db.query.offers.findFirst({
-        where: eq(offers.id, input.id),
+        where: and(eq(offers.id, input.id), eq(offers.isActive, true)),
         with: {
           provider: true,
           slots: {
             where: and(
+              lte(offerSlots.visibleFrom, now),
               gt(offerSlots.expiresAt, now),
               gt(offerSlots.remainingSpots, 0),
             ),
@@ -90,7 +117,15 @@ export const offersRouter = router({
           },
         },
       });
-      return offer ?? null;
+      if (!offer) return null;
+      // Not owned (and not admin) → same response as not found, no info leak
+      if (
+        ctx.session.user.role !== "admin" &&
+        offer.provider.userId !== ctx.session.user.id
+      ) {
+        return null;
+      }
+      return offer;
     }),
 
   // Provider: list own offers
@@ -188,6 +223,7 @@ export const offersRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
+      await getOwnedOffer(ctx, id);
       const [updated] = await ctx.db
         .update(offers)
         .set(data)
@@ -207,10 +243,7 @@ export const offersRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const offer = await ctx.db.query.offers.findFirst({
-        where: eq(offers.id, input.offerId),
-      });
-      if (!offer) throw new Error("Offre introuvable");
+      const offer = await getOwnedOffer(ctx, input.offerId);
 
       const slotDateTime = new Date(`${input.date}T${input.time}:00`);
       const visibleFrom = new Date(
@@ -237,6 +270,16 @@ export const offersRouter = router({
   deleteSlot: providerProcedure
     .input(z.object({ slotId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      const slot = await ctx.db.query.offerSlots.findFirst({
+        where: eq(offerSlots.id, input.slotId),
+      });
+      if (!slot) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Créneau introuvable",
+        });
+      }
+      await getOwnedOffer(ctx, slot.offerId);
       await ctx.db.delete(offerSlots).where(eq(offerSlots.id, input.slotId));
       return { success: true };
     }),

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { providers, users, accounts, sessions } from "@evanesc/db";
 import { hashPassword } from "better-auth/crypto";
 import { randomUUID } from "crypto";
@@ -25,15 +25,13 @@ export const providersRouter = router({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
+      const conditions = [eq(providers.isVerified, true)];
       if (input?.category) {
-        return ctx.db.query.providers.findMany({
-          where: eq(providers.category, input.category),
-          orderBy: [desc(providers.createdAt)],
-        });
+        conditions.push(eq(providers.category, input.category));
       }
 
       return ctx.db.query.providers.findMany({
-        where: eq(providers.isVerified, true),
+        where: and(...conditions),
         orderBy: [desc(providers.createdAt)],
       });
     }),
