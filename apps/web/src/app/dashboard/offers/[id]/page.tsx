@@ -35,6 +35,7 @@ export default function EditOfferPage() {
     time: "",
     capacity: 1,
   });
+  const [visibilityInput, setVisibilityInput] = useState<string | null>(null);
 
   if (isLoading) {
     return <p className="text-muted-foreground">Chargement...</p>;
@@ -45,6 +46,40 @@ export default function EditOfferPage() {
   }
 
   const discount = calculateDiscount(offer.normalPrice, offer.dealPrice);
+
+  const formatDateTime = (d: Date | string) =>
+    new Intl.DateTimeFormat("fr-FR", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(d));
+
+  const now = Date.now();
+  const slotStatus = (slot: (typeof offer.slots)[number]) => {
+    if (new Date(slot.expiresAt).getTime() <= now)
+      return {
+        label: "Expiré",
+        className: "bg-gray-100 text-muted-foreground",
+      };
+    if (slot.remainingSpots <= 0)
+      return { label: "Complet", className: "bg-yellow-50 text-yellow-600" };
+    if (new Date(slot.visibleFrom).getTime() <= now)
+      return { label: "En ligne", className: "bg-green-50 text-success" };
+    return {
+      label: `En ligne le ${formatDateTime(slot.visibleFrom)}`,
+      className: "bg-yellow-50 text-yellow-600",
+    };
+  };
+
+  const liveSlots = offer.slots.filter(
+    (s) =>
+      new Date(s.expiresAt).getTime() > now &&
+      new Date(s.visibleFrom).getTime() <= now &&
+      s.remainingSpots > 0,
+  ).length;
+
+  const visibilityValue = visibilityInput ?? String(offer.visibilityHours);
 
   const handleAddSlot = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,8 +138,54 @@ export default function EditOfferPage() {
           {offer.isActive ? "Désactiver l'offre" : "Activer l'offre"}
         </button>
         <span className="text-sm text-muted-foreground">
-          {offer.isActive ? "L'offre est visible par les clients" : "L'offre est masquée"}
+          {!offer.isActive
+            ? "L'offre est masquée"
+            : liveSlots > 0
+              ? `${liveSlots} créneau${liveSlots > 1 ? "x" : ""} actuellement en ligne`
+              : "Offre active — aucun créneau dans sa fenêtre de visibilité pour le moment"}
         </span>
+      </div>
+
+      {/* Visibility window */}
+      <div className="rounded-xl border border-border bg-white p-6">
+        <h2 className="text-lg font-semibold">Fenêtre de visibilité</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Chaque créneau apparaît aux clients X heures avant son horaire, pour
+          garder l&apos;effet &laquo; deal de dernière minute &raquo;.
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <input
+            type="number"
+            min="1"
+            value={visibilityValue}
+            onChange={(e) => setVisibilityInput(e.target.value)}
+            className="w-24 rounded-lg border border-border px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+          <span className="text-sm text-muted-foreground">
+            heures avant le créneau
+          </span>
+          <button
+            onClick={() => {
+              const hours = parseInt(visibilityValue);
+              if (hours >= 1) {
+                updateOffer.mutate({ id, visibilityHours: hours });
+              }
+            }}
+            disabled={
+              updateOffer.isPending ||
+              parseInt(visibilityValue) === offer.visibilityHours ||
+              !(parseInt(visibilityValue) >= 1)
+            }
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-light disabled:opacity-50"
+          >
+            Enregistrer
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Ex : 48 = visible 2 jours avant. Augmentez la valeur (ex : 720 = 30
+          jours) pour rendre les créneaux visibles immédiatement. S&apos;applique
+          aussi aux créneaux déjà programmés.
+        </p>
       </div>
 
       {/* Photos */}
@@ -123,27 +204,37 @@ export default function EditOfferPage() {
         </div>
 
         <div className="divide-y divide-border">
-          {offer.slots.map((slot) => (
-            <div
-              key={slot.id}
-              className="flex items-center justify-between p-4"
-            >
-              <div>
-                <p className="font-medium">
-                  {slot.date} à {slot.time}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {slot.remainingSpots}/{slot.capacity} places restantes
-                </p>
-              </div>
-              <button
-                onClick={() => deleteSlot.mutate({ slotId: slot.id })}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs text-destructive hover:bg-red-50"
+          {offer.slots.map((slot) => {
+            const status = slotStatus(slot);
+            return (
+              <div
+                key={slot.id}
+                className="flex items-center justify-between gap-3 p-4"
               >
-                Supprimer
-              </button>
-            </div>
-          ))}
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">
+                      {slot.date} à {slot.time}
+                    </p>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.className}`}
+                    >
+                      {status.label}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {slot.remainingSpots}/{slot.capacity} places restantes
+                  </p>
+                </div>
+                <button
+                  onClick={() => deleteSlot.mutate({ slotId: slot.id })}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs text-destructive hover:bg-red-50"
+                >
+                  Supprimer
+                </button>
+              </div>
+            );
+          })}
           {offer.slots.length === 0 && (
             <p className="p-6 text-center text-muted-foreground">
               Aucun créneau programmé

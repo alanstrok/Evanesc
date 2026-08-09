@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { eq, and, desc, gt, lte } from "drizzle-orm";
+import { eq, and, desc, gt, lte, sql } from "drizzle-orm";
 import { offers, offerSlots, providers } from "@evanesc/db";
 import {
   router,
@@ -229,6 +229,18 @@ export const offersRouter = router({
         .set(data)
         .where(eq(offers.id, id))
         .returning();
+
+      // Changing the visibility window must move existing slots' go-live
+      // time too (visibleFrom = slot start - window)
+      if (input.visibilityHours !== undefined) {
+        await ctx.db
+          .update(offerSlots)
+          .set({
+            visibleFrom: sql`${offerSlots.expiresAt} - make_interval(hours => ${input.visibilityHours})`,
+          })
+          .where(eq(offerSlots.offerId, id));
+      }
+
       return updated;
     }),
 

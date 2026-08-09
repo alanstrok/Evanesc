@@ -217,7 +217,7 @@ export default function NewOfferPage() {
 
         <div>
           <label className="mb-1 block text-sm font-medium">
-            Visibilité (heures avant le créneau)
+            Fenêtre de visibilité (heures avant le créneau)
           </label>
           <input
             type="number"
@@ -232,7 +232,9 @@ export default function NewOfferPage() {
             className="w-full rounded-lg border border-border px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <p className="mt-1 text-xs text-muted-foreground">
-            Le créneau deviendra visible X heures avant l&apos;heure prévue
+            Chaque créneau apparaît aux clients X heures avant son horaire
+            (effet dernière minute). Ex : 48 = visible 2 jours avant &mdash;
+            720 = visible 30 jours avant.
           </p>
         </div>
 
