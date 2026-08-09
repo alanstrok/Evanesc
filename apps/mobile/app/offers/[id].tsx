@@ -11,7 +11,7 @@ import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { trpc } from "../../src/lib/trpc";
-import { COLORS } from "../../src/lib/constants";
+import { COLORS, resolveImageUrl } from "../../src/lib/constants";
 import { formatPrice, calculateDiscount, formatDate } from "@evanesc/ui";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -46,7 +46,7 @@ export default function OfferDetailScreen() {
           {offer.images.map((uri, i) => (
             <Image
               key={i}
-              source={{ uri }}
+              source={{ uri: resolveImageUrl(uri) }}
               style={styles.galleryImage}
               contentFit="cover"
               transition={200}
@@ -59,7 +59,7 @@ export default function OfferDetailScreen() {
           <View style={styles.providerRow}>
             {offer.provider.logoUrl && (
               <Image
-                source={{ uri: offer.provider.logoUrl }}
+                source={{ uri: resolveImageUrl(offer.provider.logoUrl) }}
                 style={styles.providerLogo}
                 contentFit="cover"
               />

@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { bearer } from "better-auth/plugins";
 import { db } from "@evanesc/db";
 import {
   users,
@@ -18,6 +19,9 @@ export const auth = betterAuth({
       verification: verifications,
     },
   }),
+  // Bearer plugin: lets the mobile app authenticate with
+  // "Authorization: Bearer <session token>" instead of cookies
+  plugins: [bearer()],
   user: {
     additionalFields: {
       role: {

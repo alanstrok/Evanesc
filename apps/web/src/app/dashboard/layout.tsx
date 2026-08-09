@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/lib/auth-client";
+import { RoleGuard } from "@/components/role-guard";
 
 const navItems = [
   { href: "/dashboard", label: "Accueil", icon: "📊" },
@@ -18,6 +19,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
 
   return (
+    <RoleGuard allow={["provider", "admin"]}>
     <div className="flex min-h-screen">
       {/* Sidebar */}
       <aside className="hidden w-64 border-r border-border bg-white lg:block">
@@ -79,5 +81,6 @@ export default function DashboardLayout({
         <main className="flex-1 bg-muted p-4 lg:p-8">{children}</main>
       </div>
     </div>
+    </RoleGuard>
   );
 }

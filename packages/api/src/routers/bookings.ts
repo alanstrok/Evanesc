@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, ne, desc, gt, gte, sql } from "drizzle-orm";
 import { bookings, offerSlots, offers, providers } from "@evanesc/db";
 import { router, protectedProcedure, providerProcedure } from "../trpc";
+import { paymentsEnabled, getStripe, appUrl } from "../lib/payments";
 
 export const bookingsRouter = router({
   // Customer: list my bookings
@@ -30,7 +31,7 @@ export const bookingsRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // Check slot availability
+      // Pre-checks for friendly error messages (non-authoritative)
       const slot = await ctx.db.query.offerSlots.findFirst({
         where: eq(offerSlots.id, input.offerSlotId),
         with: { offer: true },
@@ -40,67 +41,153 @@ export const bookingsRouter = router({
         throw new Error("Créneau introuvable");
       }
 
-      if (slot.remainingSpots < input.guestsCount) {
-        throw new Error("Plus assez de places disponibles");
-      }
-
       const now = new Date();
       if (new Date(slot.expiresAt) <= now) {
         throw new Error("Ce créneau a expiré");
       }
 
-      // Create booking
-      const [booking] = await ctx.db
-        .insert(bookings)
-        .values({
-          userId: ctx.session.user.id,
-          offerSlotId: input.offerSlotId,
-          guestsCount: input.guestsCount,
-          status: "pending",
-        })
-        .returning();
+      if (slot.remainingSpots < input.guestsCount) {
+        throw new Error("Plus assez de places disponibles");
+      }
 
-      // Decrease remaining spots
-      await ctx.db
-        .update(offerSlots)
-        .set({
-          remainingSpots: sql`${offerSlots.remainingSpots} - ${input.guestsCount}`,
-        })
-        .where(eq(offerSlots.id, input.offerSlotId));
+      const withPayment = paymentsEnabled();
 
-      return booking;
+      const booking = await ctx.db.transaction(async (tx) => {
+        // Guarded atomic decrement — the WHERE clause is the authoritative
+        // availability check, so concurrent bookings can never oversell
+        const decremented = await tx
+          .update(offerSlots)
+          .set({
+            remainingSpots: sql`${offerSlots.remainingSpots} - ${input.guestsCount}`,
+          })
+          .where(
+            and(
+              eq(offerSlots.id, input.offerSlotId),
+              gte(offerSlots.remainingSpots, input.guestsCount),
+              gt(offerSlots.expiresAt, now),
+            ),
+          )
+          .returning({ id: offerSlots.id });
+
+        if (decremented.length === 0) {
+          throw new Error("Plus assez de places disponibles");
+        }
+
+        const [created] = await tx
+          .insert(bookings)
+          .values({
+            userId: ctx.session.user.id,
+            offerSlotId: input.offerSlotId,
+            guestsCount: input.guestsCount,
+            // Without Stripe configured, the reservation is final immediately
+            // (payment on site). With Stripe, it holds the spots until the
+            // checkout webhook confirms or expires it.
+            status: withPayment ? "pending" : "confirmed",
+          })
+          .returning();
+
+        return created;
+      });
+
+      if (!withPayment) {
+        return { booking, checkoutUrl: null };
+      }
+
+      try {
+        const session = await getStripe().checkout.sessions.create({
+          mode: "payment",
+          line_items: [
+            {
+              price_data: {
+                currency: "eur",
+                product_data: {
+                  name: slot.offer.title,
+                  description: `${slot.date} à ${slot.time} — ${input.guestsCount} personne(s)`,
+                },
+                unit_amount: Math.round(parseFloat(slot.offer.dealPrice) * 100),
+              },
+              quantity: input.guestsCount,
+            },
+          ],
+          metadata: { bookingId: booking.id },
+          // Stripe requires at least 30 min; the webhook releases the spots
+          // if the session expires unpaid
+          expires_at: Math.floor(now.getTime() / 1000) + 35 * 60,
+          success_url: `${appUrl()}/bookings?payment=success`,
+          cancel_url: `${appUrl()}/offers/${slot.offer.id}?payment=cancelled`,
+        });
+
+        await ctx.db
+          .update(bookings)
+          .set({ stripePaymentId: session.id })
+          .where(eq(bookings.id, booking.id));
+
+        return { booking, checkoutUrl: session.url };
+      } catch {
+        // Stripe unreachable: release the held spots so they aren't lost
+        await ctx.db.transaction(async (tx) => {
+          const [cancelled] = await tx
+            .update(bookings)
+            .set({ status: "cancelled" })
+            .where(
+              and(eq(bookings.id, booking.id), ne(bookings.status, "cancelled")),
+            )
+            .returning();
+          if (cancelled) {
+            await tx
+              .update(offerSlots)
+              .set({
+                remainingSpots: sql`${offerSlots.remainingSpots} + ${cancelled.guestsCount}`,
+              })
+              .where(eq(offerSlots.id, cancelled.offerSlotId));
+          }
+        });
+        throw new Error(
+          "Le paiement est momentanément indisponible, veuillez réessayer",
+        );
+      }
     }),
 
   // Customer: cancel booking
   cancel: protectedProcedure
     .input(z.object({ bookingId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const booking = await ctx.db.query.bookings.findFirst({
-        where: and(
-          eq(bookings.id, input.bookingId),
-          eq(bookings.userId, ctx.session.user.id),
-        ),
+      return ctx.db.transaction(async (tx) => {
+        // Atomic status flip — only one concurrent cancel can win,
+        // so spots are never restored twice
+        const [updated] = await tx
+          .update(bookings)
+          .set({ status: "cancelled" })
+          .where(
+            and(
+              eq(bookings.id, input.bookingId),
+              eq(bookings.userId, ctx.session.user.id),
+              ne(bookings.status, "cancelled"),
+            ),
+          )
+          .returning();
+
+        if (!updated) {
+          const existing = await tx.query.bookings.findFirst({
+            where: and(
+              eq(bookings.id, input.bookingId),
+              eq(bookings.userId, ctx.session.user.id),
+            ),
+          });
+          if (!existing) throw new Error("Réservation introuvable");
+          throw new Error("Déjà annulée");
+        }
+
+        // Restore spots
+        await tx
+          .update(offerSlots)
+          .set({
+            remainingSpots: sql`${offerSlots.remainingSpots} + ${updated.guestsCount}`,
+          })
+          .where(eq(offerSlots.id, updated.offerSlotId));
+
+        return updated;
       });
-
-      if (!booking) throw new Error("Réservation introuvable");
-      if (booking.status === "cancelled") throw new Error("Déjà annulée");
-
-      // Update booking status
-      const [updated] = await ctx.db
-        .update(bookings)
-        .set({ status: "cancelled" })
-        .where(eq(bookings.id, input.bookingId))
-        .returning();
-
-      // Restore spots
-      await ctx.db
-        .update(offerSlots)
-        .set({
-          remainingSpots: sql`${offerSlots.remainingSpots} + ${booking.guestsCount}`,
-        })
-        .where(eq(offerSlots.id, booking.offerSlotId));
-
-      return updated;
     }),
 
   // Customer: confirm booking (after payment)

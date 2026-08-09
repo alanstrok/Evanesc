@@ -4,8 +4,17 @@ import Link from "next/link";
 import { trpc } from "@/lib/trpc";
 import { formatPrice, calculateDiscount } from "@evanesc/ui";
 
+const formatDateTime = (d: Date | string) =>
+  new Intl.DateTimeFormat("fr-FR", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(d));
+
 export default function OffersPage() {
   const { data: offers, isLoading } = trpc.offers.myOffers.useQuery();
+  const now = Date.now();
 
   return (
     <div className="space-y-6">
@@ -29,7 +38,26 @@ export default function OffersPage() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {offers?.map((offer) => (
+        {offers?.map((offer) => {
+          const liveCount = offer.slots.filter(
+            (s) =>
+              new Date(s.expiresAt).getTime() > now &&
+              new Date(s.visibleFrom).getTime() <= now &&
+              s.remainingSpots > 0,
+          ).length;
+          const nextUpcoming = offer.slots
+            .filter(
+              (s) =>
+                new Date(s.expiresAt).getTime() > now &&
+                new Date(s.visibleFrom).getTime() > now,
+            )
+            .sort(
+              (a, b) =>
+                new Date(a.visibleFrom).getTime() -
+                new Date(b.visibleFrom).getTime(),
+            )[0];
+
+          return (
           <Link
             key={offer.id}
             href={`/dashboard/offers/${offer.id}`}
@@ -71,8 +99,25 @@ export default function OffersPage() {
               {offer.slots.length} créneau{offer.slots.length !== 1 && "x"} programmé
               {offer.slots.length !== 1 && "s"}
             </div>
+
+            <div className="mt-2 text-xs">
+              {!offer.isActive ? null : liveCount > 0 ? (
+                <span className="font-medium text-success">
+                  ● En ligne ({liveCount} créneau{liveCount > 1 ? "x" : ""})
+                </span>
+              ) : nextUpcoming ? (
+                <span className="font-medium text-yellow-600">
+                  ● En ligne le {formatDateTime(nextUpcoming.visibleFrom)}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  ● Aucun créneau à venir
+                </span>
+              )}
+            </div>
           </Link>
-        ))}
+          );
+        })}
       </div>
 
       {offers?.length === 0 && (
