@@ -72,7 +72,7 @@ export default function BookingsScreen() {
                 </Text>
               </View>
 
-              {item.status === "pending" && (
+              {item.status !== "cancelled" && (
                 <Pressable
                   onPress={() => cancelBooking.mutate({ bookingId: item.id })}
                   style={styles.cancelButton}

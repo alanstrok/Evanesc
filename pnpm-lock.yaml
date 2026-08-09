@@ -93,6 +93,9 @@ importers:
         specifier: ^2.2.0
         version: 2.2.6
     devDependencies:
+      '@evanesc/api':
+        specifier: workspace:*
+        version: link:../../packages/api
       '@types/react':
         specifier: ~18.3.0
         version: 18.3.28

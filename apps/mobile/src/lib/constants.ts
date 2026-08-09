@@ -1,3 +1,12 @@
+export const API_URL =
+  process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+
+// Uploaded images are stored as relative paths (/api/uploads/...) —
+// resolve them against the API host; absolute URLs pass through untouched
+export function resolveImageUrl(url: string): string {
+  return url.startsWith("http") ? url : `${API_URL}${url}`;
+}
+
 export const COLORS = {
   primary: "#1a1a1a",
   accent: "#c9a96e",

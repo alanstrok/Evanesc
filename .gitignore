@@ -58,8 +58,8 @@ docker-data/
 # Drizzle
 drizzle/meta/
 
-# MinIO
-minio-data/
+# Uploaded images (dev)
+uploads/
 
 # Misc
 *.tsbuildinfo

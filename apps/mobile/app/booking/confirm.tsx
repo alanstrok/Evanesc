@@ -16,11 +16,13 @@ export default function BookingConfirmScreen() {
   const [loading, setLoading] = useState(false);
 
   const { data: offer } = trpc.offers.byId.useQuery({ id: offerId! });
+  const { data: config } = trpc.config.get.useQuery();
   const utils = trpc.useUtils();
 
   const createBooking = trpc.bookings.create.useMutation({
     onSuccess: () => {
       utils.bookings.myBookings.invalidate();
+      utils.offers.byId.invalidate({ id: offerId! });
     },
   });
 
@@ -29,39 +31,55 @@ export default function BookingConfirmScreen() {
   const totalPrice = offer
     ? parseFloat(offer.dealPrice) * guestsCount
     : 0;
+  const paymentsEnabled = config?.paymentsEnabled ?? false;
 
   const handleBooking = async () => {
     if (!slotId) return;
     setLoading(true);
 
     try {
-      // Create the booking first (pending)
-      const booking = await createBooking.mutateAsync({
+      const { checkoutUrl } = await createBooking.mutateAsync({
         offerSlotId: slotId,
         guestsCount,
       });
 
-      // In production, redirect to Stripe hosted payment page via WebView
-      // For development, we simulate payment confirmation
-      const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+      if (checkoutUrl) {
+        // Payments enabled: pay via Stripe Checkout in the browser,
+        // the webhook confirms the booking server-side
+        await WebBrowser.openBrowserAsync(checkoutUrl);
+        router.replace("/(tabs)/bookings");
+        return;
+      }
 
-      // Open Stripe checkout in a WebView (Expo Go compatible)
-      const result = await WebBrowser.openBrowserAsync(
-        `${API_URL}/api/checkout?bookingId=${booking.id}&amount=${totalPrice}`,
-      );
-
-      if (result.type === "cancel") {
-        Alert.alert("Paiement", "Le paiement a été annulé.");
-      } else {
-        Alert.alert("Réservation confirmée", "Votre réservation est confirmée !", [
+      Alert.alert(
+        "Réservation confirmée",
+        "Votre réservation est confirmée. Le règlement s'effectue sur place.",
+        [
           {
             text: "Voir mes réservations",
             onPress: () => router.replace("/(tabs)/bookings"),
           },
-        ]);
-      }
+        ],
+      );
     } catch (err: any) {
-      Alert.alert("Erreur", err.message || "Impossible de créer la réservation");
+      if (err?.data?.code === "UNAUTHORIZED") {
+        Alert.alert(
+          "Connexion requise",
+          "Connectez-vous pour réserver cette offre.",
+          [
+            { text: "Annuler", style: "cancel" },
+            {
+              text: "Se connecter",
+              onPress: () => router.push("/auth/login"),
+            },
+          ],
+        );
+      } else {
+        Alert.alert(
+          "Erreur",
+          err.message || "Impossible de créer la réservation",
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -134,13 +152,18 @@ export default function BookingConfirmScreen() {
         style={[styles.payButton, loading && styles.payButtonDisabled]}
       >
         <Text style={styles.payButtonText}>
-          {loading ? "Traitement..." : `Payer ${formatPrice(totalPrice)}`}
+          {loading
+            ? "Traitement..."
+            : paymentsEnabled
+              ? `Payer ${formatPrice(totalPrice)}`
+              : "Confirmer la réservation"}
         </Text>
       </Pressable>
 
       <Text style={styles.disclaimer}>
-        Paiement sécurisé par Stripe. Vous serez redirigé vers la page de
-        paiement.
+        {paymentsEnabled
+          ? "Paiement sécurisé par Stripe. Vous serez redirigé vers la page de paiement."
+          : "Le règlement s'effectue directement sur place auprès du prestataire."}
       </Text>
     </View>
   );

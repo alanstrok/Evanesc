@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "typescript": "^5.6.0",
-    "@types/react": "~18.3.0"
+    "@types/react": "~18.3.0",
+    "@evanesc/api": "workspace:*"
   }
 }

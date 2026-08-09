@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import { formatPrice, calculateDiscount, CATEGORIES } from "@evanesc/ui";
+import { ImageUploader } from "@/components/image-uploader";
 
 export default function EditOfferPage() {
   const { id } = useParams<{ id: string }>();
@@ -104,6 +105,15 @@ export default function EditOfferPage() {
         <span className="text-sm text-muted-foreground">
           {offer.isActive ? "L'offre est visible par les clients" : "L'offre est masquée"}
         </span>
+      </div>
+
+      {/* Photos */}
+      <div className="rounded-xl border border-border bg-white p-6">
+        <h2 className="mb-4 text-lg font-semibold">Photos</h2>
+        <ImageUploader
+          images={offer.images}
+          onChange={(images) => updateOffer.mutate({ id, images })}
+        />
       </div>
 
       {/* Slots management */}

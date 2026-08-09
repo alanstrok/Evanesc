@@ -2,6 +2,7 @@ import { z } from "zod";
 import { eq, and, ne, desc, gt, gte, sql } from "drizzle-orm";
 import { bookings, offerSlots, offers, providers } from "@evanesc/db";
 import { router, protectedProcedure, providerProcedure } from "../trpc";
+import { paymentsEnabled, getStripe, appUrl } from "../lib/payments";
 
 export const bookingsRouter = router({
   // Customer: list my bookings
@@ -33,6 +34,7 @@ export const bookingsRouter = router({
       // Pre-checks for friendly error messages (non-authoritative)
       const slot = await ctx.db.query.offerSlots.findFirst({
         where: eq(offerSlots.id, input.offerSlotId),
+        with: { offer: true },
       });
 
       if (!slot) {
@@ -48,7 +50,9 @@ export const bookingsRouter = router({
         throw new Error("Plus assez de places disponibles");
       }
 
-      return ctx.db.transaction(async (tx) => {
+      const withPayment = paymentsEnabled();
+
+      const booking = await ctx.db.transaction(async (tx) => {
         // Guarded atomic decrement — the WHERE clause is the authoritative
         // availability check, so concurrent bookings can never oversell
         const decremented = await tx
@@ -69,18 +73,79 @@ export const bookingsRouter = router({
           throw new Error("Plus assez de places disponibles");
         }
 
-        const [booking] = await tx
+        const [created] = await tx
           .insert(bookings)
           .values({
             userId: ctx.session.user.id,
             offerSlotId: input.offerSlotId,
             guestsCount: input.guestsCount,
-            status: "pending",
+            // Without Stripe configured, the reservation is final immediately
+            // (payment on site). With Stripe, it holds the spots until the
+            // checkout webhook confirms or expires it.
+            status: withPayment ? "pending" : "confirmed",
           })
           .returning();
 
-        return booking;
+        return created;
       });
+
+      if (!withPayment) {
+        return { booking, checkoutUrl: null };
+      }
+
+      try {
+        const session = await getStripe().checkout.sessions.create({
+          mode: "payment",
+          line_items: [
+            {
+              price_data: {
+                currency: "eur",
+                product_data: {
+                  name: slot.offer.title,
+                  description: `${slot.date} à ${slot.time} — ${input.guestsCount} personne(s)`,
+                },
+                unit_amount: Math.round(parseFloat(slot.offer.dealPrice) * 100),
+              },
+              quantity: input.guestsCount,
+            },
+          ],
+          metadata: { bookingId: booking.id },
+          // Stripe requires at least 30 min; the webhook releases the spots
+          // if the session expires unpaid
+          expires_at: Math.floor(now.getTime() / 1000) + 35 * 60,
+          success_url: `${appUrl()}/bookings?payment=success`,
+          cancel_url: `${appUrl()}/offers/${slot.offer.id}?payment=cancelled`,
+        });
+
+        await ctx.db
+          .update(bookings)
+          .set({ stripePaymentId: session.id })
+          .where(eq(bookings.id, booking.id));
+
+        return { booking, checkoutUrl: session.url };
+      } catch {
+        // Stripe unreachable: release the held spots so they aren't lost
+        await ctx.db.transaction(async (tx) => {
+          const [cancelled] = await tx
+            .update(bookings)
+            .set({ status: "cancelled" })
+            .where(
+              and(eq(bookings.id, booking.id), ne(bookings.status, "cancelled")),
+            )
+            .returning();
+          if (cancelled) {
+            await tx
+              .update(offerSlots)
+              .set({
+                remainingSpots: sql`${offerSlots.remainingSpots} + ${cancelled.guestsCount}`,
+              })
+              .where(eq(offerSlots.id, cancelled.offerSlotId));
+          }
+        });
+        throw new Error(
+          "Le paiement est momentanément indisponible, veuillez réessayer",
+        );
+      }
     }),
 
   // Customer: cancel booking

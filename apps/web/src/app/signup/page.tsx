@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signIn } from "@/lib/auth-client";
+import { signUp } from "@/lib/auth-client";
 import { trpc } from "@/lib/trpc";
 
-export default function LoginPage() {
+export default function SignupPage() {
   const router = useRouter();
   const utils = trpc.useUtils();
   const [redirect, setRedirect] = useState<string | null>(null);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -19,46 +20,24 @@ export default function LoginPage() {
     setRedirect(new URLSearchParams(window.location.search).get("redirect"));
   }, []);
 
-  const redirectByRole = async () => {
-    utils.auth.getSession.invalidate();
-    const session = await utils.auth.getSession.fetch();
-    const role = session?.user?.role;
-
-    if (redirect) {
-      router.push(redirect);
-    } else if (role === "admin") {
-      router.push("/admin");
-    } else if (role === "provider") {
-      router.push("/dashboard");
-    } else {
-      router.push("/");
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      const result = await signIn.email({ email, password });
+      const result = await signUp.email({ email, password, name });
       if (result.error) {
-        setError(result.error.message || "Erreur de connexion");
+        setError(result.error.message || "Erreur lors de la création du compte");
       } else {
-        await redirectByRole();
+        utils.auth.getSession.invalidate();
+        router.push(redirect || "/");
       }
     } catch {
-      setError("Erreur de connexion");
+      setError("Erreur lors de la création du compte");
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleGoogleSignIn = async () => {
-    await signIn.social({
-      provider: "google",
-      callbackURL: redirect || "/",
-    });
   };
 
   return (
@@ -69,17 +48,35 @@ export default function LoginPage() {
             Evanesc
           </Link>
           <p className="mt-2 text-muted-foreground">
-            Connectez-vous à votre compte
+            Créez votre compte pour réserver les meilleurs deals de St Barth
           </p>
         </div>
 
-        <div className="rounded-xl bg-white p-8 shadow-sm border border-border">
+        <div className="rounded-xl border border-border bg-white p-8 shadow-sm">
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="rounded-lg bg-red-50 p-3 text-sm text-destructive">
                 {error}
               </div>
             )}
+
+            <div>
+              <label
+                htmlFor="name"
+                className="mb-1 block text-sm font-medium text-foreground"
+              >
+                Nom complet
+              </label>
+              <input
+                id="name"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Jean Dupont"
+                required
+                className="w-full rounded-lg border border-border px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </div>
 
             <div>
               <label
@@ -111,8 +108,9 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="8 caractères minimum"
                 required
+                minLength={8}
                 className="w-full rounded-lg border border-border px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               />
             </div>
@@ -122,35 +120,19 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {loading ? "Connexion..." : "Se connecter"}
+              {loading ? "Création..." : "Créer mon compte"}
             </button>
           </form>
 
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-white px-2 text-muted-foreground">ou</span>
-            </div>
-          </div>
-
-          <button
-            onClick={handleGoogleSignIn}
-            className="w-full rounded-lg border border-border py-2.5 text-sm font-medium transition-colors hover:bg-muted"
-          >
-            Continuer avec Google
-          </button>
-
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            Pas encore de compte ?{" "}
+            Déjà un compte ?{" "}
             <Link
-              href={`/signup${
+              href={`/login${
                 redirect ? `?redirect=${encodeURIComponent(redirect)}` : ""
               }`}
               className="font-medium text-accent hover:underline"
             >
-              Créer un compte
+              Se connecter
             </Link>
           </p>
         </div>

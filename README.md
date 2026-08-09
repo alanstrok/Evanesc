@@ -13,7 +13,7 @@ evanesc/
 │   ├── api/        → tRPC v11 — Routeurs partagés (offers, bookings, providers, auth)
 │   ├── db/         → Drizzle ORM + PostgreSQL — Schéma et migrations
 │   └── ui/         → Composants et utilitaires partagés
-├── docker-compose.yml        → Dev: PostgreSQL, Redis, MinIO
+├── docker-compose.yml        → Dev: PostgreSQL, Redis
 ├── docker-compose.prod.yml   → Prod: tout-en-un pour Unraid
 ├── deploy.sh                 → Script de déploiement production
 └── turbo.json                → Configuration Turborepo
@@ -42,7 +42,7 @@ cp .env.example .env
 cp apps/web/.env.example apps/web/.env
 cp apps/mobile/.env.example apps/mobile/.env
 
-# 4. Lancer les services Docker (PostgreSQL, Redis, MinIO)
+# 4. Lancer les services Docker (PostgreSQL, Redis)
 docker-compose up -d
 
 # 5. Pousser le schéma en base
@@ -71,14 +71,11 @@ pnpm dev
 | `APPLE_TEAM_ID` | Apple Developer Team ID | |
 | `APPLE_KEY_ID` | Apple Sign-In Key ID | |
 | `APPLE_PRIVATE_KEY` | Apple Sign-In private key | |
-| `STRIPE_SECRET_KEY` | Clé secrète Stripe | `sk_test_...` |
+| `STRIPE_SECRET_KEY` | Clé secrète Stripe — **laisser vide jusqu'au lancement** (voir Paiements) | `sk_test_...` |
 | `STRIPE_PUBLISHABLE_KEY` | Clé publique Stripe | `pk_test_...` |
 | `STRIPE_WEBHOOK_SECRET` | Secret webhook Stripe | `whsec_...` |
 | `RESEND_API_KEY` | Clé API Resend pour les emails | `re_...` |
-| `S3_ENDPOINT` | URL MinIO/S3 | `http://localhost:9000` |
-| `S3_ACCESS_KEY` | Clé d'accès S3 | `minioadmin` |
-| `S3_SECRET_KEY` | Clé secrète S3 | `minioadmin` |
-| `S3_BUCKET` | Nom du bucket | `evanesc-media` |
+| `UPLOAD_DIR` | Dossier de stockage des images (défaut : `./uploads`) | `/app/uploads` |
 
 ### Mobile (`apps/mobile/.env`)
 
@@ -135,6 +132,29 @@ Le script de seed (`pnpm db:seed`) crée :
 - **1 client test** : client@test.com
 
 Mot de passe de tous les comptes seed : `password123`
+
+## Paiements (Stripe)
+
+Les paiements sont **désactivés par défaut** : tant que `STRIPE_SECRET_KEY` est
+vide, les réservations sont confirmées immédiatement et le règlement s'effectue
+sur place. Toute l'app fonctionne sans compte Stripe.
+
+Au lancement, il suffira de :
+
+1. Créer le compte Stripe et renseigner `STRIPE_SECRET_KEY`,
+   `STRIPE_PUBLISHABLE_KEY` et `STRIPE_WEBHOOK_SECRET`
+2. Déclarer le webhook `https://votre-domaine.com/api/webhooks/stripe`
+   (événements `checkout.session.completed` et `checkout.session.expired`)
+
+Le flux bascule alors automatiquement : réservation en attente → Stripe
+Checkout → confirmation via webhook (les créneaux sont libérés si la session
+de paiement expire).
+
+## Stockage des images
+
+Les photos d'offres sont stockées sur le disque local (`UPLOAD_DIR`, volume
+Docker `uploads-data` en production) et servies par l'app via
+`/api/uploads/...` — aucun service externe (S3/MinIO) n'est nécessaire.
 
 ## Production — Déploiement Unraid
 
@@ -217,10 +237,9 @@ labels:
 
 | Service | Port interne | Description |
 |---|---|---|
-| `web` | 3000 | Next.js (seul port exposé) |
+| `web` | 3000 | Next.js (seul port exposé) — volume `uploads-data` pour les images |
 | `postgres` | 5432 | PostgreSQL 16 |
 | `redis` | 6379 | Redis 7 |
-| `minio` | 9000/9001 | MinIO (S3 compatible) |
 
 ## Publication mobile (App Store / TestFlight)
 
@@ -272,9 +291,9 @@ eas submit --platform android
 - **API** : tRPC v11 (type-safe end-to-end)
 - **Base de données** : PostgreSQL 16 + Drizzle ORM
 - **Auth** : Better Auth (email/password + Google + Apple)
-- **Paiements** : Stripe Connect
+- **Paiements** : Stripe (optionnel — activé via variables d'env au lancement)
 - **Emails** : Resend
-- **Storage** : MinIO (S3-compatible)
+- **Storage** : disque local (volume Docker, servi par Next.js)
 - **Cache** : Redis 7
 - **Déploiement** : Docker Compose sur Unraid
 

@@ -11,7 +11,7 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { trpc } from "../../src/lib/trpc";
-import { COLORS } from "../../src/lib/constants";
+import { COLORS, resolveImageUrl } from "../../src/lib/constants";
 import { CATEGORIES, formatPrice, calculateDiscount } from "@evanesc/ui";
 
 type CategoryValue = (typeof CATEGORIES)[number]["value"] | null;
@@ -89,7 +89,7 @@ export default function ExploreScreen() {
             >
               {item.images[0] && (
                 <Image
-                  source={{ uri: item.images[0] }}
+                  source={{ uri: resolveImageUrl(item.images[0]) }}
                   style={styles.cardImage}
                   contentFit="cover"
                   transition={200}

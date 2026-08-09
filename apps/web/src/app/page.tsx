@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { SiteHeader } from "@/components/site-header";
 import {
   formatPrice,
   calculateDiscount,
@@ -22,20 +23,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-muted">
-      {/* Header */}
-      <header className="border-b border-border bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <Link href="/" className="text-2xl font-bold text-primary">
-            Evanesc
-          </Link>
-          <Link
-            href="/login"
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
-          >
-            Connexion
-          </Link>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* Hero */}
       <section className="bg-primary py-16 text-center text-white">

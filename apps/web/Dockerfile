@@ -55,6 +55,9 @@ COPY --from=builder /app/apps/web/public ./apps/web/public/
 # Copy migration files (used by instrumentation.ts on startup)
 COPY --from=builder /app/packages/db/drizzle ./packages/db/drizzle
 
+# Writable dir for uploaded images (mounted as a volume in production)
+RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
+
 USER nextjs
 
 EXPOSE 3000

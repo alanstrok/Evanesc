@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import { CATEGORIES } from "@evanesc/ui";
+import { ImageUploader } from "@/components/image-uploader";
 
 export default function NewOfferPage() {
   const router = useRouter();
@@ -22,6 +23,7 @@ export default function NewOfferPage() {
     dealPrice: "",
     category: "restaurants" as const,
     categories: [] as string[],
+    images: [] as string[],
     totalSpots: "",
     visibilityHours: 48,
     slotDate: "",
@@ -47,6 +49,7 @@ export default function NewOfferPage() {
       dealPrice: form.dealPrice,
       category: form.category,
       categories: form.categories,
+      images: form.images,
       totalSpots: form.totalSpots ? parseInt(form.totalSpots) : undefined,
       visibilityHours: form.visibilityHours,
       ...(form.slotDate && form.slotTime
@@ -92,6 +95,15 @@ export default function NewOfferPage() {
             placeholder="Décrivez votre offre..."
             rows={3}
             className="w-full rounded-lg border border-border px-4 py-2.5 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+        </div>
+
+        {/* Photos */}
+        <div>
+          <label className="mb-2 block text-sm font-medium">Photos</label>
+          <ImageUploader
+            images={form.images}
+            onChange={(images) => setForm({ ...form, images })}
           />
         </div>
 
